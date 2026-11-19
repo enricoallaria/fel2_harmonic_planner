@@ -104,16 +104,21 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
   <section class="panel" aria-label="Inputs">
     <div class="controls">
       <fieldset>
-        <legend>Target (nm)</legend>
+        <legend>Target</legend>
         <div class="seg" role="radiogroup" aria-label="Target type">
           <label><input type="radio" name="mode" value="single"> Single value</label>
           <label><input type="radio" name="mode" value="range" checked> Range</label>
         </div>
-        <label class="f" id="fsingle" hidden><span>Wavelength</span><input type="number" id="target" value="4.8" step="0.01" min="0"></label>
-        <div class="pair" id="frange">
-          <label class="f"><span>From</span><input type="number" id="rlo" value="3.5" step="0.01" min="0"></label>
-          <label class="f"><span>To</span><input type="number" id="rhi" value="6.0" step="0.01" min="0"></label>
+        <div class="seg" role="radiogroup" aria-label="Unit">
+          <label><input type="radio" name="unit" value="nm" checked> Wavelength (nm)</label>
+          <label><input type="radio" name="unit" value="eV"> Energy (eV)</label>
         </div>
+        <label class="f" id="fsingle" hidden><span id="lsingle">Wavelength (nm)</span><input type="number" id="target" value="4.8" step="any" min="0"></label>
+        <div class="pair" id="frange">
+          <label class="f"><span id="lfrom">From (nm)</span><input type="number" id="rlo" value="3.5" step="any" min="0"></label>
+          <label class="f"><span id="lto">To (nm)</span><input type="number" id="rhi" value="6.0" step="any" min="0"></label>
+        </div>
+        <p class="hint">&lambda; [nm] = 1239.84 / E [eV]. Results show both units.</p>
       </fieldset>
 
       <fieldset>
@@ -171,10 +176,21 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
   var EPS = 1e-9;
 
   function val(id) { var v = $(id).value.trim(); return v === "" ? NaN : parseFloat(v); }
+  var HC = 1239.84198; /* eV nm */
+  function unit() { return document.querySelector('input[name=unit]:checked').value; }
+  function toNm(v) { return unit() === "eV" ? (v > 0 ? HC / v : NaN) : v; }
+  function ev(nm) { return HC / nm; }
+  function tgtTxt(t) {
+    return unit() === "eV" ? "<b>" + fx(ev(t), 3) + " eV</b> (" + fx(t, 3) + " nm)" : "<b>" + fx(t, 3) + " nm</b> (" + fx(ev(t), 2) + " eV)";
+  }
+  function rngTxt(lo, hi) {
+    return unit() === "eV" ? "<b>" + fx(ev(hi), 2) + " \u2013 " + fx(ev(lo), 2) + " eV</b> (" + fx(lo, 3) + " \u2013 " + fx(hi, 3) + " nm)"
+      : "<b>" + fx(lo, 3) + " \u2013 " + fx(hi, 3) + " nm</b> (" + fx(ev(hi), 2) + " \u2013 " + fx(ev(lo), 2) + " eV)";
+  }
   function readParams() {
     var mode = document.querySelector('input[name=mode]:checked').value;
     return {
-      mode: mode, target: val("target"), rlo: val("rlo"), rhi: val("rhi"),
+      mode: mode, target: toNm(val("target")), rlo: toNm(val("rlo")), rhi: toNm(val("rhi")),
       smin: val("smin"), smax: val("smax"),
       n1a: Math.round(val("n1a")), n1b: Math.round(val("n1b")),
       n2a: Math.round(val("n2a")), n2b: Math.round(val("n2b")),
@@ -186,8 +202,8 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
     if (!(p.smin > 0 && p.smax >= p.smin)) return "Seed tuning needs 0 < min ≤ max.";
     if (!(p.n1a >= 1 && p.n1b >= p.n1a)) return "n1 needs 1 ≤ min ≤ max.";
     if (!(p.n2a >= 1 && p.n2b >= p.n2a)) return "n2 needs 1 ≤ min ≤ max.";
-    if (p.mode === "single" && !(p.target > 0)) return "Enter a target wavelength above 0 nm.";
-    if (p.mode === "range" && !(p.rlo > 0 && p.rhi > 0)) return "Enter both ends of the target range, above 0 nm.";
+    if (p.mode === "single" && !(p.target > 0)) return "Enter a target above 0.";
+    if (p.mode === "range" && !(p.rlo > 0 && p.rhi > 0)) return "Enter both ends of the target range, above 0.";
     return "";
   }
 
@@ -334,7 +350,7 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
                '<text class="cellt" x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle">' + c.txt + "</text>";
         } else {
           s += '<rect class="cellno" x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="2"/>' +
-               '<text x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle">–</text>';
+               '<text x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle">\u2013</text>';
         }
         if (bestCombo && bestCombo.n1 === n1 && bestCombo.n2 === n2) {
           s += '<rect class="best" x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="2"/>';
@@ -389,7 +405,7 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
         }).slice(0, 5);
         html += '<div class="status err">No pair reaches ' + fx(t, 3) + " nm with this seed range. Closest options are listed below.</div>";
         html += sectionTable("Closest pairs", ["Pair", "n1", "n2", "N", "Reachable range (nm)"],
-          near.map(function (c) { return [c.n1 + "×" + c.n2, c.n1, c.n2, c.N, fx(c.reach[0]) + " – " + fx(c.reach[1])]; }), false, false);
+          near.map(function (c) { return [c.n1 + "×" + c.n2, c.n1, c.n2, c.N, fx(c.reach[0]) + " \u2013 " + fx(c.reach[1])]; }), false, false);
         csvText = "";
         var show0 = near.map(function (c) { return { label: label(c), lo: c.reach[0], hi: c.reach[1], ok: false }; });
         var dom0 = [Math.min(t, Math.min.apply(null, show0.map(function (r) { return r.lo; }))), Math.max(t, Math.max.apply(null, show0.map(function (r) { return r.hi; })))];
@@ -398,12 +414,12 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
         draw.push(function () { $("f1").innerHTML = barsSVG(W, show0, dom0, { line: t, aria: "Reachable ranges versus target" }); });
       } else {
         var best = rows[0];
-        html += '<section class="panel sum"><span>Target <b>' + fx(t, 3) + ' nm</b></span><span>Pairs found <b>' + rows.length +
+        html += '<section class="panel sum"><span>Target ' + tgtTxt(t) + '</span><span>Pairs found <b>' + rows.length +
           '</b></span><span>Best <b>' + best.c.n1 + "×" + best.c.n2 + "</b> (N = " + best.c.N + ")</span><span>Seed <b>" + fx(best.seed, 2) +
           ' nm</b></span><span>&lambda;<sub>1</sub> <b>' + fx(best.seed / best.c.n1, 2) + " nm</b></span></section>";
-        var hs = ["#", "n1", "n2", "N", "Seed (nm)", "&lambda;<sub>1</sub> (nm)", "Margin (%)", "Pair reaches (nm)"];
+        var hs = ["#", "n1", "n2", "N", "Seed (nm)", "&lambda;<sub>1</sub> (nm)", "Margin (%)", "Pair reaches (nm)", "Pair reaches (eV)"];
         var trs = rows.slice(0, p.top).map(function (r, i) {
-          return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.seed, 3), fx(r.seed / r.c.n1, 3), fx(r.margin * 100, 1), fx(r.c.reach[0]) + " – " + fx(r.c.reach[1])];
+          return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.seed, 3), fx(r.seed / r.c.n1, 3), fx(r.margin * 100, 1), fx(r.c.reach[0]) + " \u2013 " + fx(r.c.reach[1]), fx(ev(r.c.reach[1]), 2) + " \u2013 " + fx(ev(r.c.reach[0]), 2)];
         });
         csvText = csv(hs, trs);
         html += sectionTable("Ranked options", hs, trs, true, true);
@@ -430,24 +446,24 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
       if (hi - lo < 1e-9) { hi = lo + 1e-6; }
       var R = solveRange(p, combos, lo, hi);
       if (!R.rows.length) {
-        st.hidden = false; st.className = "status err"; st.textContent = "No pair overlaps " + fx(lo, 3) + " – " + fx(hi, 3) + " nm with this seed range."; out.innerHTML = ""; return;
+        st.hidden = false; st.className = "status err"; st.textContent = "No pair overlaps " + fx(lo, 3) + " \u2013 " + fx(hi, 3) + " nm with this seed range."; out.innerHTML = ""; return;
       }
       var bestR = R.rows[0];
-      html += '<section class="panel sum"><span>Target range <b>' + fx(lo, 3) + " – " + fx(hi, 3) + ' nm</b></span><span>Best single pair <b>' +
+      html += '<section class="panel sum"><span>Target range ' + rngTxt(lo, hi) + '</span><span>Best single pair <b>' +
         bestR.c.n1 + "×" + bestR.c.n2 + "</b> covers <b>" + fx(bestR.cov * 100, 1) + "%</b></span><span>Pairs needed for full range <b>" + R.chosen.length +
         "</b> (<b>" + fx(R.covered * 100, 0) + "%</b> covered)</span></section>";
       if (R.gaps.length) {
-        html += '<div class="status err">Not reachable: ' + R.gaps.map(function (g) { return fx(g[0], 3) + " – " + fx(g[1], 3) + " nm"; }).join(", ") + ". Widen the seed tuning range or the harmonics.</div>";
+        html += '<div class="status err">Not reachable: ' + R.gaps.map(function (g) { return fx(g[0], 3) + " \u2013 " + fx(g[1], 3) + " nm"; }).join(", ") + ". Widen the seed tuning range or the harmonics.</div>";
       }
-      var hs2 = ["#", "n1", "n2", "N", "Coverage (%)", "Final range (nm)", "Seed needed (nm)"];
+      var hs2 = ["#", "n1", "n2", "N", "Coverage (%)", "Final range (nm)", "Final range (eV)", "Seed needed (nm)"];
       var trs2 = R.rows.slice(0, p.top).map(function (r, i) {
-        return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.cov * 100, 1), fx(r.ov[0]) + " – " + fx(r.ov[1]), fx(r.ov[0] * r.c.N, 2) + " – " + fx(r.ov[1] * r.c.N, 2)];
+        return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.cov * 100, 1), fx(r.ov[0]) + " \u2013 " + fx(r.ov[1]), fx(ev(r.ov[1]), 2) + " \u2013 " + fx(ev(r.ov[0]), 2), fx(r.ov[0] * r.c.N, 2) + " \u2013 " + fx(r.ov[1] * r.c.N, 2)];
       });
       csvText = csv(hs2, trs2);
       html += sectionTable("Best single pairs", hs2, trs2, true, true);
-      var hs3 = ["n1", "n2", "N", "Final range (nm)", "Seed range (nm)"];
+      var hs3 = ["n1", "n2", "N", "Final range (nm)", "Final range (eV)", "Seed range (nm)"];
       var trs3 = R.chosen.map(function (r) {
-        return [r.c.n1, r.c.n2, r.c.N, fx(r.ov[0]) + " – " + fx(r.ov[1]), fx(r.ov[0] * r.c.N, 2) + " – " + fx(r.ov[1] * r.c.N, 2)];
+        return [r.c.n1, r.c.n2, r.c.N, fx(r.ov[0]) + " \u2013 " + fx(r.ov[1]), fx(ev(r.ov[1]), 2) + " \u2013 " + fx(ev(r.ov[0]), 2), fx(r.ov[0] * r.c.N, 2) + " \u2013 " + fx(r.ov[1] * r.c.N, 2)];
       });
       html += sectionTable("Pairs that together cover the range (re-tune seed and harmonics between them)", hs3, trs3, false, false);
       var shownR = R.rows.slice(0, p.top).map(function (r) { return { label: label(r.c), lo: r.c.reach[0], hi: r.c.reach[1] }; });
@@ -493,9 +509,24 @@ svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
     var single = document.querySelector('input[name=mode]:checked').value === "single";
     $("fsingle").hidden = !single; $("frange").hidden = single;
   }
+  var lastUnit = "nm";
+  function syncUnit() {
+    var u = unit(); if (u === lastUnit) return;
+    var a = val("rlo"), b = val("rhi");
+    if (a > 0 && b > 0) {
+      var x = HC / a, y = HC / b;
+      $("rlo").value = String(+Math.min(x, y).toPrecision(5)); $("rhi").value = String(+Math.max(x, y).toPrecision(5));
+    }
+    var t = val("target"); if (t > 0) $("target").value = String(+(HC / t).toPrecision(5));
+    lastUnit = u;
+    var e = u === "eV";
+    $("lsingle").textContent = e ? "Photon energy (eV)" : "Wavelength (nm)";
+    $("lfrom").textContent = e ? "From (eV)" : "From (nm)";
+    $("lto").textContent = e ? "To (eV)" : "To (nm)";
+  }
   document.querySelectorAll("input, select").forEach(function (el) {
-    el.addEventListener("input", function () { if (el.name === "mode") syncMode(); schedule(); });
-    el.addEventListener("change", function () { if (el.name === "mode") syncMode(); schedule(); });
+    el.addEventListener("input", function () { if (el.name === "mode") syncMode(); if (el.name === "unit") syncUnit(); schedule(); });
+    el.addEventListener("change", function () { if (el.name === "mode") syncMode(); if (el.name === "unit") syncUnit(); schedule(); });
   });
   window.addEventListener("resize", schedule);
   syncMode(); render();
