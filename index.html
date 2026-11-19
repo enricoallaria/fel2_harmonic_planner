@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>:root{color-scheme:light}[hidden]{display:none!important}</style>
+<title>HGHG Harmonic Planner</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow control panel on top, results (table, then figures) stacked below. Instrument-panel feel, cool neutrals, one teal accent, one orange marker for the target. */
+:root {
+  --bg: #f3f6f8; --surface: #ffffff; --fg: #14212b; --muted: #5b6b78; --line: #d8e0e6;
+  --accent: #0b6e7f; --mark: #c2410c; --good: #2f7d4f; --warn: #a16207;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e161c; --surface: #16212a; --fg: #e5edf1; --muted: #93a4b0; --line: #27373f;
+    --accent: #4cc3d6; --mark: #ff8a5c; --good: #6cc58c; --warn: #e3b341; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e161c; --surface: #16212a; --fg: #e5edf1; --muted: #93a4b0; --line: #27373f;
+  --accent: #4cc3d6; --mark: #ff8a5c; --good: #6cc58c; --warn: #e3b341; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font: 14px/1.5 var(--sans);
+  margin: 0; padding-block: 24px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 4px; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.formula { font-family: var(--mono); color: var(--fg); }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-width: 0; }
+.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 20px 28px; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+legend { font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); padding: 0; margin-bottom: 10px; float: left; width: 100%; }
+legend + * { clear: both; }
+.f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.f > span { font-size: 12px; color: var(--muted); }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+input[type=number], select {
+  width: 100%; font: 13px var(--mono); padding: 6px 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--fg); min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible, .seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+.seg { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg label { text-align: center; padding: 6px 8px; cursor: pointer; font-size: 13px; background: var(--bg); color: var(--muted); }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg label:has(input:checked) { background: var(--accent); color: var(--surface); font-weight: 500; }
+details { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.09em; }
+details .controls { margin-top: 14px; }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+.status { padding: 10px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+.status.err { border-color: var(--mark); color: var(--mark); }
+.sum { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: baseline; }
+.sum b { font-family: var(--mono); font-weight: 500; }
+h2 { font-size: 15px; font-weight: 600; margin: 0; }
+.head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+button {
+  font: 12px var(--sans); padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--fg); cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+.tw { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+th { text-align: right; font: 600 11px var(--sans); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+tr.best td { color: var(--accent); font-weight: 500; }
+tr:last-child td { border-bottom: 0; }
+.figs { display: grid; grid-template-columns: 1fr; gap: 20px; }
+.cap { color: var(--muted); font-size: 12px; margin: 10px 0 0; max-width: 80ch; }
+svg { display: block; max-width: 100%; }
+svg text { font-family: var(--mono); font-size: 11px; fill: var(--muted); }
+svg .lb { fill: var(--fg); }
+svg .cellt { fill: var(--fg); font-size: 11px; }
+svg .grid { stroke: var(--line); stroke-width: 1; }
+svg .bar { fill: var(--accent); fill-opacity: 0.85; }
+svg .barx { fill: var(--muted); fill-opacity: 0.35; }
+svg .tline { stroke: var(--mark); stroke-width: 2; }
+svg .tband { fill: var(--mark); fill-opacity: 0.14; }
+svg .cell { fill: var(--accent); }
+svg .cellno { fill: none; stroke: var(--line); }
+svg .best { fill: none; stroke: var(--fg); stroke-width: 2; }
+@media (prefers-reduced-motion: no-preference) { button { transition: border-color .15s; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>HGHG Harmonic Planner</h1>
+    <p>Two-stage cascaded HGHG: <span class="formula">&lambda;<sub>final</sub> = &lambda;<sub>seed</sub> / (n1 &middot; n2)</span>. Set the seed laser tuning range and the harmonics available in each stage; the page ranks the (n1, n2) pairs that reach your wavelength or range.</p>
+  </header>
+
+  <section class="panel" aria-label="Inputs">
+    <div class="controls">
+      <fieldset>
+        <legend>Target (nm)</legend>
+        <div class="seg" role="radiogroup" aria-label="Target type">
+          <label><input type="radio" name="mode" value="single"> Single value</label>
+          <label><input type="radio" name="mode" value="range" checked> Range</label>
+        </div>
+        <label class="f" id="fsingle" hidden><span>Wavelength</span><input type="number" id="target" value="4.8" step="0.01" min="0"></label>
+        <div class="pair" id="frange">
+          <label class="f"><span>From</span><input type="number" id="rlo" value="3.5" step="0.01" min="0"></label>
+          <label class="f"><span>To</span><input type="number" id="rhi" value="6.0" step="0.01" min="0"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Seed laser tuning (nm)</legend>
+        <div class="pair">
+          <label class="f"><span>Min</span><input type="number" id="smin" value="230" step="0.5" min="0"></label>
+          <label class="f"><span>Max</span><input type="number" id="smax" value="260" step="0.5" min="0"></label>
+        </div>
+        <p class="hint">Final wavelength = seed / (n1&middot;n2), so the seed range sets what each pair can reach.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Harmonics</legend>
+        <div class="pair">
+          <label class="f"><span>n1 min (stage 1)</span><input type="number" id="n1a" value="6" step="1" min="1"></label>
+          <label class="f"><span>n1 max</span><input type="number" id="n1b" value="15" step="1" min="1"></label>
+          <label class="f"><span>n2 min (stage 2)</span><input type="number" id="n2a" value="2" step="1" min="1"></label>
+          <label class="f"><span>n2 max</span><input type="number" id="n2b" value="6" step="1" min="1"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Preference</legend>
+        <label class="f"><span>Rank pairs by</span>
+          <select id="pref">
+            <option value="n">Smaller total harmonic N = n1&middot;n2</option>
+            <option value="h1">Smaller first-stage harmonic n1</option>
+            <option value="h2">Smaller second-stage harmonic n2</option>
+          </select>
+        </label>
+        <label class="f"><span>Rows shown</span><input type="number" id="top" value="12" step="1" min="1" max="60"></label>
+        <p class="hint">Ties are broken by the margin from the edges of the seed range. In range mode, coverage of your range is ranked first.</p>
+      </fieldset>
+    </div>
+
+    <details>
+      <summary>Optional limits</summary>
+      <div class="controls">
+        <label class="f"><span>Max total harmonic N</span><input type="number" id="maxN" placeholder="none" step="1" min="1"></label>
+        <div class="f"><span>Stage-1 radiation &lambda;<sub>1</sub> (nm)</span>
+          <div class="pair"><input type="number" id="l1a" placeholder="min" step="0.1" aria-label="Stage 1 min"><input type="number" id="l1b" placeholder="max" step="0.1" aria-label="Stage 1 max"></div></div>
+        <div class="f"><span>Final radiation &lambda;<sub>f</sub> (nm)</span>
+          <div class="pair"><input type="number" id="lfa" placeholder="min" step="0.1" aria-label="Final min"><input type="number" id="lfb" placeholder="max" step="0.1" aria-label="Final max"></div></div>
+      </div>
+    </details>
+  </section>
+
+  <div id="status" class="status" hidden></div>
+  <div id="out"></div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var EPS = 1e-9;
+
+  function val(id) { var v = $(id).value.trim(); return v === "" ? NaN : parseFloat(v); }
+  function readParams() {
+    var mode = document.querySelector('input[name=mode]:checked').value;
+    return {
+      mode: mode, target: val("target"), rlo: val("rlo"), rhi: val("rhi"),
+      smin: val("smin"), smax: val("smax"),
+      n1a: Math.round(val("n1a")), n1b: Math.round(val("n1b")),
+      n2a: Math.round(val("n2a")), n2b: Math.round(val("n2b")),
+      maxN: val("maxN"), l1a: val("l1a"), l1b: val("l1b"), lfa: val("lfa"), lfb: val("lfb"),
+      pref: $("pref").value, top: Math.max(1, Math.round(val("top")) || 12)
+    };
+  }
+  function validate(p) {
+    if (!(p.smin > 0 && p.smax >= p.smin)) return "Seed tuning needs 0 < min ≤ max.";
+    if (!(p.n1a >= 1 && p.n1b >= p.n1a)) return "n1 needs 1 ≤ min ≤ max.";
+    if (!(p.n2a >= 1 && p.n2b >= p.n2a)) return "n2 needs 1 ≤ min ≤ max.";
+    if (p.mode === "single" && !(p.target > 0)) return "Enter a target wavelength above 0 nm.";
+    if (p.mode === "range" && !(p.rlo > 0 && p.rhi > 0)) return "Enter both ends of the target range, above 0 nm.";
+    return "";
+  }
+
+  function intersect(a, b) {
+    var lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+    return hi >= lo ? [lo, hi] : null;
+  }
+  function buildCombos(p) {
+    var out = [];
+    for (var n1 = p.n1a; n1 <= p.n1b; n1++) {
+      for (var n2 = p.n2a; n2 <= p.n2b; n2++) {
+        var N = n1 * n2;
+        if (p.maxN > 0 && N > p.maxN) continue;
+        var seed = [p.smin, p.smax];
+        if (p.l1a > 0 || p.l1b > 0) {
+          seed = intersect(seed, [(p.l1a > 0 ? p.l1a : 0) * n1, (p.l1b > 0 ? p.l1b : Infinity) * n1]);
+          if (!seed) continue;
+        }
+        if (p.lfa > 0 || p.lfb > 0) {
+          seed = intersect(seed, [(p.lfa > 0 ? p.lfa : 0) * N, (p.lfb > 0 ? p.lfb : Infinity) * N]);
+          if (!seed) continue;
+        }
+        out.push({ n1: n1, n2: n2, N: N, seed: seed, reach: [seed[0] / N, seed[1] / N] });
+      }
+    }
+    return out;
+  }
+
+  function cmpArr(a, b) {
+    for (var i = 0; i < a.length; i++) { if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1; }
+    return 0;
+  }
+  function r6(x) { return Math.round(x * 1e6) / 1e6; }
+  function prefKey(c, p, margin) {
+    var m = -r6(margin || 0);
+    if (p.pref === "h1") return [c.n1, c.N, m];
+    if (p.pref === "h2") return [c.n2, c.N, m];
+    return [c.N, c.n1, m];
+  }
+  function label(c) { return c.n1 + "×" + c.n2 + " (N=" + c.N + ")"; }
+  function fx(v, d) { return Number(v).toFixed(d === undefined ? 3 : d); }
+
+  function solveSingle(p, combos, t) {
+    var rows = [];
+    combos.forEach(function (c) {
+      if (t >= c.reach[0] - 1e-12 && t <= c.reach[1] + 1e-12) {
+        var seed = t * c.N, w = c.seed[1] - c.seed[0];
+        var margin = Math.min(seed - c.seed[0], c.seed[1] - seed) / (w || 1);
+        rows.push({ c: c, seed: seed, margin: margin, key: prefKey(c, p, margin) });
+      }
+    });
+    rows.sort(function (a, b) { return cmpArr(a.key, b.key); });
+    return rows;
+  }
+
+  function mergedLen(iv) {
+    var s = iv.slice().sort(function (a, b) { return a[0] - b[0]; }), tot = 0, cur = null;
+    s.forEach(function (x) {
+      if (!cur) cur = [x[0], x[1]];
+      else if (x[0] <= cur[1]) cur[1] = Math.max(cur[1], x[1]);
+      else { tot += cur[1] - cur[0]; cur = [x[0], x[1]]; }
+    });
+    if (cur) tot += cur[1] - cur[0];
+    return tot;
+  }
+  function solveRange(p, combos, lo, hi) {
+    var span = hi - lo, rows = [];
+    combos.forEach(function (c) {
+      var ov = intersect(c.reach, [lo, hi]);
+      var cov = ov ? (ov[1] - ov[0]) / span : 0;
+      rows.push({ c: c, ov: ov, cov: cov, key: [-r6(cov)].concat(prefKey(c, p, 0)) });
+    });
+    rows.sort(function (a, b) { return cmpArr(a.key, b.key); });
+    var withOv = rows.filter(function (r) { return r.cov > 0; });
+    var chosen = [], covered = [];
+    while (mergedLen(covered) < span - EPS) {
+      var base = mergedLen(covered), best = null;
+      withOv.forEach(function (r) {
+        var gain = mergedLen(covered.concat([r.ov])) - base;
+        if (gain <= EPS) return;
+        if (!best || gain > best.gain + EPS ||
+            (Math.abs(gain - best.gain) <= EPS && cmpArr(prefKey(r.c, p, 0), prefKey(best.r.c, p, 0)) < 0)) {
+          best = { r: r, gain: gain };
+        }
+      });
+      if (!best) break;
+      chosen.push(best.r); covered.push(best.r.ov);
+    }
+    chosen.sort(function (a, b) { return a.ov[0] - b.ov[0]; });
+    var gaps = [], s = covered.slice().sort(function (a, b) { return a[0] - b[0]; }), pos = lo;
+    s.forEach(function (x) { if (x[0] > pos + EPS) gaps.push([pos, x[0]]); pos = Math.max(pos, x[1]); });
+    if (pos < hi - EPS) gaps.push([pos, hi]);
+    return { rows: withOv, all: rows, chosen: chosen, covered: mergedLen(covered) / span, gaps: gaps };
+  }
+
+  /* ---------- drawing helpers ---------- */
+  function niceTicks(a, b, n) {
+    var span = b - a; if (!(span > 0)) return [a];
+    var raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+    var step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * mag, t = [];
+    for (var v = Math.ceil(a / step - 1e-9) * step; v <= b + 1e-9; v += step) t.push(+v.toFixed(10));
+    t.step = step; return t;
+  }
+  function tickFmt(t) {
+    var s = t.step || 1, d = s >= 1 ? 0 : Math.min(3, Math.ceil(-Math.log10(s)));
+    return function (v) { return v.toFixed(d); };
+  }
+  function barsSVG(W, rows, dom, opt) {
+    var ml = Math.min(118, Math.round(W * 0.32)), mr = 14, mt = 8, mb = 44, rh = 24;
+    var H = mt + rows.length * rh + mb, pw = W - ml - mr;
+    var x = function (v) { return ml + (v - dom[0]) / (dom[1] - dom[0]) * pw; };
+    var tk = niceTicks(dom[0], dom[1], Math.max(3, Math.floor(pw / 80))), ff = tickFmt(tk);
+    var s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="' + opt.aria + '">';
+    tk.forEach(function (t) {
+      s += '<line class="grid" x1="' + x(t) + '" x2="' + x(t) + '" y1="' + mt + '" y2="' + (H - mb) + '"/>' +
+           '<text x="' + x(t) + '" y="' + (H - mb + 16) + '" text-anchor="middle">' + ff(t) + "</text>";
+    });
+    if (opt.band) s += '<rect class="tband" x="' + x(opt.band[0]) + '" y="' + mt + '" width="' + Math.max(2, x(opt.band[1]) - x(opt.band[0])) + '" height="' + (H - mb - mt) + '"/>';
+    if (opt.line !== undefined) s += '<line class="tline" x1="' + x(opt.line) + '" x2="' + x(opt.line) + '" y1="' + mt + '" y2="' + (H - mb) + '"/>';
+    rows.forEach(function (r, i) {
+      var y = mt + i * rh;
+      s += '<text class="lb" x="' + (ml - 8) + '" y="' + (y + rh / 2 + 4) + '" text-anchor="end">' + r.label + "</text>" +
+           '<rect class="' + (r.ok === false ? "barx" : "bar") + '" x="' + x(r.lo) + '" y="' + (y + 4) + '" width="' + Math.max(2, x(r.hi) - x(r.lo)) + '" height="' + (rh - 8) + '" rx="2"/>';
+    });
+    s += '<text x="' + (ml + pw / 2) + '" y="' + (H - 8) + '" text-anchor="middle">final wavelength (nm)</text></svg>';
+    return s;
+  }
+  function heatSVG(W, p, cellFn, bestCombo) {
+    var cols = p.n1b - p.n1a + 1, rowsN = p.n2b - p.n2a + 1;
+    var ml = 40, mt = 30, mr = 6, cw = (W - ml - mr) / cols, ch = 30;
+    var H = mt + rowsN * ch + 6;
+    var s = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Heat map over n1 and n2">';
+    s += '<text x="' + ml + '" y="10">n1 →</text><text x="2" y="' + (mt - 6) + '">n2 ↓</text>';
+    for (var j = 0; j < cols; j++) {
+      s += '<text x="' + (ml + (j + 0.5) * cw) + '" y="' + (mt - 6) + '" text-anchor="middle">' + (p.n1a + j) + "</text>";
+    }
+    for (var i = 0; i < rowsN; i++) {
+      var n2 = p.n2a + i, y = mt + i * ch;
+      s += '<text x="' + (ml - 8) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="end">' + n2 + "</text>";
+      for (var k = 0; k < cols; k++) {
+        var n1 = p.n1a + k, x = ml + k * cw, c = cellFn(n1, n2);
+        if (c) {
+          s += '<rect class="cell" fill-opacity="' + c.op.toFixed(2) + '" x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="2"/>' +
+               '<text class="cellt" x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle">' + c.txt + "</text>";
+        } else {
+          s += '<rect class="cellno" x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="2"/>' +
+               '<text x="' + (x + cw / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle">–</text>';
+        }
+        if (bestCombo && bestCombo.n1 === n1 && bestCombo.n2 === n2) {
+          s += '<rect class="best" x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (cw - 2) + '" height="' + (ch - 2) + '" rx="2"/>';
+        }
+      }
+    }
+    return s + "</svg>";
+  }
+
+  /* ---------- render ---------- */
+  var csvText = "";
+  function table(heads, rows, bestFirst) {
+    var h = "<table><thead><tr>" + heads.map(function (x) { return "<th>" + x + "</th>"; }).join("") + "</tr></thead><tbody>";
+    rows.forEach(function (r, i) {
+      h += "<tr" + (bestFirst && i === 0 ? ' class="best"' : "") + ">" + r.map(function (x) { return "<td>" + x + "</td>"; }).join("") + "</tr>";
+    });
+    return h + "</tbody></table>";
+  }
+  function csv(heads, rows) {
+    var strip = function (x) { return String(x).replace(/&[a-z]+;/g, "").replace(/<[^>]+>/g, ""); };
+    return [heads.map(strip).join(",")].concat(rows.map(function (r) { return r.map(strip).join(","); })).join("\n");
+  }
+  function sectionTable(title, heads, rows, bestFirst, withCopy) {
+    return '<section class="panel"><div class="head"><h2>' + title + "</h2>" +
+      (withCopy ? '<button type="button" id="copycsv">Copy as CSV</button>' : "") +
+      '</div><div class="tw">' + table(heads, rows, bestFirst) + "</div></section>";
+  }
+  function fig(title, svgId, cap) {
+    return '<section class="panel"><h2>' + title + '</h2><div id="' + svgId + '" style="margin-top:10px"></div><p class="cap">' + cap + "</p></section>";
+  }
+
+  var pending = null;
+  function render() {
+    var p = readParams(), st = $("status"), out = $("out");
+    var err = validate(p);
+    if (err) { st.hidden = false; st.className = "status err"; st.textContent = err; out.innerHTML = ""; return; }
+    st.hidden = true;
+    var combos = buildCombos(p);
+    var W = Math.max(300, Math.floor(out.clientWidth - 34));
+    var html = "", draw = [];
+    if (!combos.length) {
+      st.hidden = false; st.className = "status err"; st.textContent = "No (n1, n2) pair satisfies the limits. Relax the optional limits or widen the harmonic ranges."; out.innerHTML = ""; return;
+    }
+
+    if (p.mode === "single") {
+      var t = p.target, rows = solveSingle(p, combos, t);
+      if (!rows.length) {
+        var near = combos.slice().sort(function (a, b) {
+          var da = Math.min(Math.abs(t - a.reach[0]), Math.abs(t - a.reach[1]));
+          var db = Math.min(Math.abs(t - b.reach[0]), Math.abs(t - b.reach[1]));
+          return da - db;
+        }).slice(0, 5);
+        html += '<div class="status err">No pair reaches ' + fx(t, 3) + " nm with this seed range. Closest options are listed below.</div>";
+        html += sectionTable("Closest pairs", ["Pair", "n1", "n2", "N", "Reachable range (nm)"],
+          near.map(function (c) { return [c.n1 + "×" + c.n2, c.n1, c.n2, c.N, fx(c.reach[0]) + " – " + fx(c.reach[1])]; }), false, false);
+        csvText = "";
+        var show0 = near.map(function (c) { return { label: label(c), lo: c.reach[0], hi: c.reach[1], ok: false }; });
+        var dom0 = [Math.min(t, Math.min.apply(null, show0.map(function (r) { return r.lo; }))), Math.max(t, Math.max.apply(null, show0.map(function (r) { return r.hi; })))];
+        var pad0 = (dom0[1] - dom0[0]) * 0.04 || 0.1; dom0 = [dom0[0] - pad0, dom0[1] + pad0];
+        html += fig("Reachable range of the closest pairs", "f1", "Grey bars are the final wavelengths each pair can reach; the orange line is your target.");
+        draw.push(function () { $("f1").innerHTML = barsSVG(W, show0, dom0, { line: t, aria: "Reachable ranges versus target" }); });
+      } else {
+        var best = rows[0];
+        html += '<section class="panel sum"><span>Target <b>' + fx(t, 3) + ' nm</b></span><span>Pairs found <b>' + rows.length +
+          '</b></span><span>Best <b>' + best.c.n1 + "×" + best.c.n2 + "</b> (N = " + best.c.N + ")</span><span>Seed <b>" + fx(best.seed, 2) +
+          ' nm</b></span><span>&lambda;<sub>1</sub> <b>' + fx(best.seed / best.c.n1, 2) + " nm</b></span></section>";
+        var hs = ["#", "n1", "n2", "N", "Seed (nm)", "&lambda;<sub>1</sub> (nm)", "Margin (%)", "Pair reaches (nm)"];
+        var trs = rows.slice(0, p.top).map(function (r, i) {
+          return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.seed, 3), fx(r.seed / r.c.n1, 3), fx(r.margin * 100, 1), fx(r.c.reach[0]) + " – " + fx(r.c.reach[1])];
+        });
+        csvText = csv(hs, trs);
+        html += sectionTable("Ranked options", hs, trs, true, true);
+        var shown = rows.slice(0, p.top).map(function (r) { return { label: label(r.c), lo: r.c.reach[0], hi: r.c.reach[1], ok: true }; });
+        var dom = [Math.min.apply(null, shown.map(function (r) { return r.lo; })), Math.max.apply(null, shown.map(function (r) { return r.hi; }))];
+        var pad = (dom[1] - dom[0]) * 0.04 || 0.1; dom = [dom[0] - pad, dom[1] + pad];
+        html += '<div class="figs">' +
+          fig("Wavelength range of each option", "f1", "Each bar is the span of final wavelengths that pair reaches by tuning the seed; the orange line is your target. Best option first.") +
+          fig("Seed wavelength needed, by (n1, n2)", "f2", "Cell value is the seed wavelength in nm that gives your target. Darker means closer to the long-wavelength end of the seed range. A dash means the pair cannot reach it. The outlined cell is the top-ranked option.") +
+          "</div>";
+        draw.push(function () { $("f1").innerHTML = barsSVG(W, shown, dom, { line: t, aria: "Reachable ranges versus target" }); });
+        draw.push(function () {
+          var map = {};
+          rows.forEach(function (r) { map[r.c.n1 + "," + r.c.n2] = r; });
+          $("f2").innerHTML = heatSVG(W, p, function (n1, n2) {
+            var r = map[n1 + "," + n2]; if (!r) return null;
+            var f = (r.seed - p.smin) / ((p.smax - p.smin) || 1);
+            return { op: 0.15 + 0.5 * f, txt: Math.round(r.seed) };
+          }, best.c);
+        });
+      }
+    } else {
+      var lo = Math.min(p.rlo, p.rhi), hi = Math.max(p.rlo, p.rhi);
+      if (hi - lo < 1e-9) { hi = lo + 1e-6; }
+      var R = solveRange(p, combos, lo, hi);
+      if (!R.rows.length) {
+        st.hidden = false; st.className = "status err"; st.textContent = "No pair overlaps " + fx(lo, 3) + " – " + fx(hi, 3) + " nm with this seed range."; out.innerHTML = ""; return;
+      }
+      var bestR = R.rows[0];
+      html += '<section class="panel sum"><span>Target range <b>' + fx(lo, 3) + " – " + fx(hi, 3) + ' nm</b></span><span>Best single pair <b>' +
+        bestR.c.n1 + "×" + bestR.c.n2 + "</b> covers <b>" + fx(bestR.cov * 100, 1) + "%</b></span><span>Pairs needed for full range <b>" + R.chosen.length +
+        "</b> (<b>" + fx(R.covered * 100, 0) + "%</b> covered)</span></section>";
+      if (R.gaps.length) {
+        html += '<div class="status err">Not reachable: ' + R.gaps.map(function (g) { return fx(g[0], 3) + " – " + fx(g[1], 3) + " nm"; }).join(", ") + ". Widen the seed tuning range or the harmonics.</div>";
+      }
+      var hs2 = ["#", "n1", "n2", "N", "Coverage (%)", "Final range (nm)", "Seed needed (nm)"];
+      var trs2 = R.rows.slice(0, p.top).map(function (r, i) {
+        return [i + 1, r.c.n1, r.c.n2, r.c.N, fx(r.cov * 100, 1), fx(r.ov[0]) + " – " + fx(r.ov[1]), fx(r.ov[0] * r.c.N, 2) + " – " + fx(r.ov[1] * r.c.N, 2)];
+      });
+      csvText = csv(hs2, trs2);
+      html += sectionTable("Best single pairs", hs2, trs2, true, true);
+      var hs3 = ["n1", "n2", "N", "Final range (nm)", "Seed range (nm)"];
+      var trs3 = R.chosen.map(function (r) {
+        return [r.c.n1, r.c.n2, r.c.N, fx(r.ov[0]) + " – " + fx(r.ov[1]), fx(r.ov[0] * r.c.N, 2) + " – " + fx(r.ov[1] * r.c.N, 2)];
+      });
+      html += sectionTable("Pairs that together cover the range (re-tune seed and harmonics between them)", hs3, trs3, false, false);
+      var shownR = R.rows.slice(0, p.top).map(function (r) { return { label: label(r.c), lo: r.c.reach[0], hi: r.c.reach[1] }; });
+      var chosenR = R.chosen.map(function (r) { return { label: label(r.c), lo: r.ov[0], hi: r.ov[1] }; });
+      var span = hi - lo;
+      var domA = [Math.min(lo, Math.min.apply(null, shownR.map(function (r) { return r.lo; }))), Math.max(hi, Math.max.apply(null, shownR.map(function (r) { return r.hi; })))];
+      var domB = [lo - span * 0.03, hi + span * 0.03];
+      html += '<div class="figs">' +
+        fig("Best single pairs against your range", "f1", "Blue bars show the wavelengths each pair can reach with the seed tuning range. The orange band is your target range.") +
+        fig("Pairs tiling the range", "f2", "The smallest set of pairs found that together span the target range. Each bar is the part of the range handled by that pair.") +
+        fig("Coverage of your range by (n1, n2)", "f3", "Cell value is the percentage of your target range that the pair reaches. Darker means more. A dash means no overlap. The outlined cell is the top-ranked pair.") +
+        "</div>";
+      draw.push(function () { $("f1").innerHTML = barsSVG(W, shownR, domA, { band: [lo, hi], aria: "Best single pairs against target range" }); });
+      draw.push(function () { $("f2").innerHTML = barsSVG(W, chosenR, domB, { band: [lo, hi], aria: "Pairs tiling the target range" }); });
+      draw.push(function () {
+        var map = {};
+        R.all.forEach(function (r) { map[r.c.n1 + "," + r.c.n2] = r; });
+        $("f3").innerHTML = heatSVG(W, p, function (n1, n2) {
+          var r = map[n1 + "," + n2]; if (!r || r.cov <= 0) return null;
+          return { op: 0.1 + 0.6 * r.cov, txt: Math.round(r.cov * 100) };
+        }, bestR.c);
+      });
+    }
+    out.innerHTML = '<div style="display:flex;flex-direction:column;gap:20px">' + html + "</div>";
+    draw.forEach(function (fn) { fn(); });
+    var b = $("copycsv");
+    if (b) b.addEventListener("click", function () {
+      var done = function () { b.textContent = "Copied"; setTimeout(function () { b.textContent = "Copy as CSV"; }, 1500); };
+      try {
+        navigator.clipboard.writeText(csvText).then(done, function () { fallbackCopy(done); });
+      } catch (e) { fallbackCopy(done); }
+    });
+  }
+  function fallbackCopy(done) {
+    try {
+      var ta = document.createElement("textarea"); ta.value = csvText; document.body.appendChild(ta);
+      ta.select(); document.execCommand("copy"); document.body.removeChild(ta); done();
+    } catch (e) { /* nothing more to try */ }
+  }
+
+  function schedule() { if (pending) clearTimeout(pending); pending = setTimeout(render, 80); }
+  function syncMode() {
+    var single = document.querySelector('input[name=mode]:checked').value === "single";
+    $("fsingle").hidden = !single; $("frange").hidden = single;
+  }
+  document.querySelectorAll("input, select").forEach(function (el) {
+    el.addEventListener("input", function () { if (el.name === "mode") syncMode(); schedule(); });
+    el.addEventListener("change", function () { if (el.name === "mode") syncMode(); schedule(); });
+  });
+  window.addEventListener("resize", schedule);
+  syncMode(); render();
+})();
+</script>
+</body>
+</html>
